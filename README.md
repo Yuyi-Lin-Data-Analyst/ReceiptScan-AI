@@ -10,10 +10,10 @@ Develop an efficient image processing system that:
 
 <p><p>
 
-  1. Converts diverse receipt photos into standardized digital images.
-  2. Reduces manual data entry time through automated receipt digitization.
-  3. Implements a command-line interface for batch processing, suitable for   business and personal use.
-  4. Lays the foundation for a personal finance and product price tracking database.
+  > 1. Converts diverse receipt photos into standardized digital images.
+  > 2. Reduces manual data entry time through automated receipt digitization.
+  > 3. Implements a command-line interface for batch processing, suitable for   business and personal use.
+  > 4. Lays the foundation for a personal finance and product price tracking database.
 
 <p><p>
   
