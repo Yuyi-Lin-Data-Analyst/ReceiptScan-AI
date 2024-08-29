@@ -1,0 +1,167 @@
+import cv2
+import numpy as np
+from PIL import Image
+import matplotlib.pyplot as plt
+
+def plot_image(image, title=None, cmap=None):
+   plt.figure(figsize=(16, 10))
+   plt.imshow(image, cmap=cmap)
+   
+   if title:
+       plt.title(title)
+   
+   plt.axis('off')
+   plt.show()
+   
+def opencv_resize(image, ratio):
+	width = int(image.shape[1] * ratio)
+	height = int(image.shape[0] * ratio)
+	dim = (width, height)
+	
+	return cv2.resize(image, dim, interpolation = cv2.INTER_AREA
+
+def order_points(pts):
+	
+	# creates a 4x2 array of zeros to store the ordered points
+	rect = np.zeros((4,2), dtype = 'float32')
+	
+	# find top-left and bottom-right points:
+	# sum up x,y coordinates of each point; axis = 1 -> calculate across each row
+	s = pts.sum(axis=1)
+	
+	# the top-left point will have the smallest sum of its coordinates
+	rect[0] = pt[np.argmin(s)]
+	
+	# the bottom-right point will have the biggest sum of its coordinates
+	rect[2] = pt[np.argmax(s)]
+	
+	# find top-right and bottom-left points:
+	# calculates the difference between x,y coordinates of each points
+	diff = np.diff(pts, axis=1)
+	
+	# the top-right point will have the smallest x - y (y is small, x is large)
+	rect[1] = pts[np.argmin(diff)]
+	
+	# The bottom-left point will have the largest x - y (y is large, x is small)
+	rect[3] = pts[np.argmax(diff)]
+	
+	return rect
+
+
+# correct perspective distortion in images
+def four_point_transform(image, pts):
+	
+	# use order_points to ensure consistent ordering of points and unpcak the points
+	rect = order_points(pts)
+	(tl, tr, br, bl) = rect
+	
+	
+	# compute the width of the new img by calculating the bottom edge (widthA) and top edge (widthB)
+	widthA = np.sqrt(((br[0] - bl[0]) ** 2) + ((br[1] - bl[1]) ** 2))
+	widthB = np.sqrt(((tr[0] - tl[0]) ** 2) + ((tr[1] - tl[1]) ** 2))
+	
+	# determine max width to ensure that the transformed image can accommodate the wider of the two edges
+	maxWidth = max(int(widthA), int(widthB))
+	
+	# compute the height of the new img
+	heightA = np.sqrt(((tr[0] - br[0]) ** 2) + ((tr[1] - br[1]) ** 2))
+  heightB = np.sqrt(((tl[0] - bl[0]) ** 2) + ((tl[1] - bl[1]) ** 2))
+  maxHeight = max(int(heightA), int(heightB))
+  
+  # constuct set of destination points to obtain a "birds eye view"
+  # create an array of points representing the corners of the output image  
+  destination = np.array([
+	  [0,0], # top-left corner
+	  [maxWidth - 1, 0], # top-right corner
+	  [maxWidth - 1, maxHeight - 1], # bottom-right corner
+	  [0, maxHeight - 1]
+	  ], dtype = 'float32') # bottom-left corner
+	 
+	 
+	 # compute the transformation matrix that maps the input points (rect) to the outpout points (destination)
+	 matrix = cv2.getPerspepectiveTransform(rect, destination)
+	 
+	 # apply the transformation matrix to the image
+	 warped = cv2.warpPerspective(image, matrix, (maxWidth, maxHeight))
+	 
+	 return warped
+
+
+# creating the scanner effect
+def bw_scanner(image, offset=10):
+	gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+	
+	# applies adaptive thresholding to create that crisp, black-and-white scanner look. 
+	# the offset parameter adjust the brightness of the result
+	T = threshold_local(gray, 21, offset = offset, method = 'gaussian')
+	
+	return (gray > T).astype('unit8') * 255
+
+
+def process_receipt(file_path, resize_height=500):
+	
+	# load and preprocess - resize the image
+	image = cv2.imread(file_path)
+	original = image.copy()
+	resize_ratio = resize_height / image.shape[0]
+	image = opencv_resize(image, resize_ratio)
+	
+	# prepare the image for contour detections:
+	
+	# convert to grayscale and apply Gaussian blur
+	gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+	blurred = cv2.GaussianBlur(gray, (5,5), 0)
+	
+	# edge detection and dilation
+	edge = cv2.Canny(blurred, 75, 200)
+	kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (9,9))
+	dilated = cv2.dilate(edged, kernal, iterations=2)
+	
+	# find contours and identify the receipt (assuming the largest contour is the receipt)
+	contours, _ = cv2.findContours(dilated.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+	receipt_contour = max(contours, key=cv2.contourArea)
+	
+	# approximate the contour - simplifying the shape of the detected receipt
+	epsilon = 0.02 * cv2.arcLength(receipt_contour, True)
+	approx = cv2.approxPolyDP(receipt_contour, epsilon, True)
+	
+	# check for Quadrilateral
+	# if the approximated contour has four points, we can assume we have found the receipt
+  if len(approx) == 4:
+      receipt_contour = approx
+  else:
+      # If not, get the bounding rectangle instead
+      rect = cv2.minAreaRect(receipt_contour)
+      box = cv2.boxPoints(rect)
+      receipt_contour = np.int0(box)
+         
+ # ensure there are exactly 4 points in the contour
+	receipt_contour = receipt_contour.reshape(-1, 2)[:4]
+ 
+ # draw the contour on the original receipt
+ receipt_image = image.copy()
+ cv2.drawContours(receipt_image, [receipt_contour], -1, (0,255,0), 2)
+ 
+ # crop the receipt
+ warped = four_point_transform(original, receipt_contour / resize_ratio)
+ 
+ # apply bw_scanner effect
+ scanned_effect = bw_scanner(warped)
+ 
+ # visualization of each steps
+ plot_image(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), "Original Image")
+ plot_image(gray, "Grayscale Image", cmap='gray')
+ plot_image(blurred, "Blurred Image", cmap='gray')
+ plot_image(edged, "Edge Detection", cmap='gray')
+ plot_image(dilated, "Dilated Image", cmap='gray')
+ plot_image(cv2.cvtColor(receipt_image, cv2.COLOR_BGR2RGB), "Detected Receipt")
+ plot_image(cv2.cvtColor(warped, cv2.COLOR_BGR2RGB), "Cropped and Warped Receipt")
+ plot_image(scanned_effect, "B&W Scanner Effect", cmap='gray')
+ 
+ return scanned_effect
+ 
+
+# usage
+file_path = '/content/drive/My Drive/Colab Notebooks/receipt - boots.jpeg'
+processed_receipt = process_receipt(file_path)
+  
